@@ -22,7 +22,7 @@ The pane shows the 40 most recently updated issues that match. A spinner shows w
 
 | Command | |
 | --- | --- |
-| `/issues` | Pick a repository: the session's own first, then the 30 you pushed to most recently (yours, collaborations and your organizations'), each with its open issue count |
+| `/issues` | Started in a folder whose repository is on GitHub: that repository's issues. Anywhere else: pick a repository, the 30 you pushed to most recently (yours, collaborations and your organizations'), each with its open issue count. **Switch repo** opens the picker from the issues |
 | `/issues owner/name` | Show that repository's issues |
 | `/issues .` | Show the session's repository (from the `origin` remote) |
 

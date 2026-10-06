@@ -35,7 +35,7 @@ A mod is code that runs inside Claude Code on your machine, with the same access
 
 <img src="github-issues/docs/issues.png" alt="The github-issues pane in Claude Code" width="380">
 
-A side pane listing a repository's GitHub issues as cards, with tabs, search, a label filter and linked pull requests. `/issues` opens it with a picker of your repositories. **Work on it** sends Claude a prompt to take on an issue. Needs the [GitHub CLI](https://cli.github.com), signed in.
+A side pane listing a repository's GitHub issues as cards, with tabs, search, a label filter and linked pull requests. `/issues` opens it on the repository of the folder you started Claude Code in, or a picker of your repositories outside one. **Work on it** sends Claude a prompt to take on an issue. Needs the [GitHub CLI](https://cli.github.com), signed in.
 
 ```
 /plugin install github-issues@marco-mods
