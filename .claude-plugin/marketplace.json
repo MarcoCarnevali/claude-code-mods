@@ -1,0 +1,21 @@
+{
+  "name": "marco-mods",
+  "owner": {
+    "name": "Marco Carnevali",
+    "url": "https://github.com/MarcoCarnevali"
+  },
+  "metadata": {
+    "description": "Mods for Claude Code: panes, bands and hooks that run inside the terminal and the desktop app",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "github-issues",
+      "source": "./github-issues",
+      "description": "A side pane listing the repository's GitHub issues, with one click to have Claude work on one",
+      "version": "0.1.0",
+      "category": "productivity",
+      "keywords": ["mod", "github", "issues", "pane"]
+    }
+  ]
+}

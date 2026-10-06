@@ -1,0 +1,10 @@
+{
+  "name": "github-issues",
+  "version": "0.1.0",
+  "description": "A side pane listing the repository's GitHub issues, with one click to have Claude work on one",
+  "author": { "name": "Marco Carnevali", "url": "https://github.com/MarcoCarnevali" },
+  "repository": "https://github.com/MarcoCarnevali/claude-code-mods",
+  "license": "MIT",
+  "keywords": ["mod", "github", "issues", "pane"],
+  "types": "./types/index.d.ts"
+}
