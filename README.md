@@ -41,7 +41,7 @@ A side pane listing a repository's GitHub issues as cards, with tabs, search, a 
 /plugin install github-issues@marco-mods
 ```
 
-[Read more](./github-issues/README.md)
+[Read more](./github-issues/README.md) · [Watch the demo](https://x.com/marcocarne_/status/2107456270873796697)
 
 ## Developing
 

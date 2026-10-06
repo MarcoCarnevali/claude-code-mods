@@ -9,6 +9,8 @@ A side pane in Claude Code that lists a repository's GitHub issues as cards.
 
 <sub>Screenshots show made-up repositories, people and issues.</sub>
 
+**[Watch the demo on X](https://x.com/marcocarne_/status/2107456270873796697)**
+
 - **Tabs:** Open, Assigned (with your count), Created, Closed
 - **Search and labels:** a search box (Enter runs a GitHub search) and a label picker. **Clear** resets both.
 - **Cards:** title, `#number` (opens the issue on GitHub), assignees, last update, comment count, linked pull request (open, draft, merged or closed), and labels as small pills in GitHub's colors
