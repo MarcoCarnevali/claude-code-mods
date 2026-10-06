@@ -30,6 +30,7 @@ A mod is code that runs inside Claude Code on your machine, with the same access
 | Mod | What it does |
 | --- | --- |
 | [github-issues](#github-issues) | A side pane listing a repository's GitHub issues. Filter and search them, read one, and press **Work on it** to hand it to Claude. |
+| [task-board](#task-board) | A To do / Doing / Done board that fills itself from Claude's to-do list and approved plans, takes your own cards, and lets Claude add cards when you ask. |
 
 ### github-issues
 
@@ -42,6 +43,16 @@ A side pane listing a repository's GitHub issues as cards, with tabs, search, a 
 ```
 
 [Read more](./github-issues/README.md)
+
+### task-board
+
+A To do / Doing / Done board in a side pane. Claude's to-do list and the plans you approve fill it as Claude works, you add your own cards, and Claude has a board tool to add, move and remove cards when you ask. **Work on it** hands a card to Claude. `/board` opens it.
+
+```
+/plugin install task-board@marco-mods
+```
+
+[Read more](./task-board/README.md)
 
 ## Developing
 
