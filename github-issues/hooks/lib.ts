@@ -565,6 +565,17 @@ export function excerpt(body: string, max = 1500): string {
   return `${text.slice(0, max).trimEnd()}…`
 }
 
+/**
+ * Whether a session in `session` may take on `target`'s issues: the same
+ * repository, or a fork of it (same name, another owner).
+ */
+export function isSameRepo(session: string | null, target: string): boolean {
+  if (session === null) return false
+  if (session.toLowerCase() === target.toLowerCase()) return true
+
+  return (session.split('/')[1] ?? '').toLowerCase() === (target.split('/')[1] ?? '').toLowerCase()
+}
+
 /** The prompt "Work on it" submits. */
 export function workPrompt(repo: string, issue: Pick<Issue, 'number' | 'title' | 'url'>): string {
   return [

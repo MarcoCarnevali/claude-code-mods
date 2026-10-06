@@ -66,6 +66,9 @@ export type RepoPicker = {
   here: string | null
 }
 
+/** The issue handed to Claude: queued until Claude's turn on it starts, then working. */
+export type ActiveIssue = { number: number; state: 'queued' | 'working' }
+
 /** The issue whose details are open, and its details once loaded. */
 export type OpenIssue = { number: number; detail: IssueDetail | null }
 
@@ -79,7 +82,7 @@ declare module 'claude-code' {
       page: IssuesPane
       searchDraft: string
       open: OpenIssue | null
-      active: number | null
+      active: ActiveIssue | null
     }
   }
 }

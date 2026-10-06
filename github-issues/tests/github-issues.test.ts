@@ -10,6 +10,7 @@ import {
   chips,
   excerpt,
   fitCards,
+  isSameRepo,
   issuesArgs,
   labelDot,
   labelInk,
@@ -295,6 +296,54 @@ describe('issues', () => {
     expect((await ui.find({ key: 'work:42' }))?.text).toBe('● Working on it')
     expect((await ui.find({ key: 'issue:42' }))?.props).toMatchObject({ borderColor: 'claude' })
     expect((await ui.find({ key: 'issue:7' }))?.props).toMatchObject({ borderColor: '#8c959f' })
+  })
+
+  test('Work on it while Claude is busy shows Queued until the turn starts, and a second tap sends nothing', async ($, on) => {
+    const fake = fakeGitHub(on)
+    const submitted: string[] = []
+    let start = () => {}
+    const turn = new Promise<void>(resolve => {
+      start = resolve
+    })
+    on('prompt.submit', async ($, e) => {
+      submitted.push(e.text)
+      await turn
+
+      return { text: e.text }
+    })
+    await slashIssues($, '.')
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+
+    const pressed = ui.press({ key: 'work:42' })
+    await fake.clock.settle()
+    await fake.clock.advance(600)
+    expect((await ui.find({ key: 'work:42' }))?.text).toBe('◷ Queued')
+    expect(fake.toasts).toEqual(['#42 is queued: Claude starts on it once it finishes the current task.'])
+
+    start()
+    await pressed
+    expect((await ui.find({ key: 'work:42' }))?.text).toBe('● Working on it')
+
+    await ui.press({ key: 'work:42' })
+    expect(submitted).toHaveLength(1)
+    expect(fake.toasts.at(-1)).toBe('Claude is already on #42.')
+  })
+
+  test('Work on it in a session of another repository sends nothing and says why', async ($, on) => {
+    const fake = fakeGitHub(on)
+    const submitted: string[] = []
+    on('prompt.submit', ($, e) => {
+      submitted.push(e.text)
+
+      return { text: e.text }
+    })
+    await slashIssues($, 'other/thing')
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'work:42' })
+
+    expect(submitted).toEqual([])
+    expect(fake.toasts.at(-1)).toContain('This session works in acme/widgets, not other/thing.')
+    expect((await ui.find({ key: 'work:42' }))?.text).toBe('Work on it')
   })
 
   test('tabs search for the matching issues', async ($, on) => {
@@ -744,6 +793,13 @@ describe('lib', () => {
     expect(newlyAssigned(assigned, [1]).map(issue => issue.number)).toEqual([2])
     expect(assignedToast('a/b', assigned.issues)).toBe('2 issues newly assigned to you in a/b')
     expect(assignedToast('a/b', [])).toBeUndefined()
+  })
+
+  test('isSameRepo: the same repository, or a fork of it', () => {
+    expect(isSameRepo('acme/widgets', 'acme/widgets')).toBe(true)
+    expect(isSameRepo('jdoe/Widgets', 'acme/widgets')).toBe(true)
+    expect(isSameRepo('acme/gadgets', 'acme/widgets')).toBe(false)
+    expect(isSameRepo(null, 'acme/widgets')).toBe(false)
   })
 
   test('workPrompt asks to read the issue and reference it', () => {

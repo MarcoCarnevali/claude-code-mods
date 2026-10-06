@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type {
+  ActiveIssue,
   Issue,
   IssueDetail,
   IssueFilter,
@@ -22,6 +23,7 @@ import {
   excerpt,
   fitCards,
   isRepoName,
+  isSameRepo,
   issuesArgs,
   labelDot,
   labelOptions,
@@ -120,7 +122,7 @@ async function setOpen($: EngineInterface, value: OpenIssue | null): Promise<voi
   if (!same(await read($, open), value)) await update($, open, () => value)
 }
 
-async function setActive($: EngineInterface, value: number | null): Promise<void> {
+async function setActive($: EngineInterface, value: ActiveIssue | null): Promise<void> {
   if (!same(await read($, active), value)) await update($, active, () => value)
 }
 
@@ -415,11 +417,52 @@ async function loadDetail($: EngineInterface, number: number): Promise<void> {
   await setOpen($, { number, detail: loaded })
 }
 
+/**
+ * Hands `issue` to Claude as a prompt of its own. Claude Code starts a mod's
+ * prompt once the session is idle, so while a turn runs it waits, and the
+ * card says Queued until Claude's turn on it begins. Not sent, with a toast
+ * saying why, when the session works in another repository, or when the
+ * issue was already handed over.
+ */
 async function workOn($: EngineInterface, issue: Issue): Promise<void> {
   const target = (await read($, page)).repo
   if (target === null) return
-  await setActive($, issue.number)
-  void $.prompt.submit({ text: workPrompt(target, issue) })
+  const current = await read($, active)
+  if (current?.number === issue.number) {
+    $.ui.toast(current.state === 'queued' ? `#${issue.number} is already queued for Claude.` : `Claude is already on #${issue.number}.`)
+    return
+  }
+  const session = await detectRepo($)
+  if (!isSameRepo(session, target)) {
+    $.ui.toast(
+      `This session works in ${session ?? 'a folder with no GitHub repository'}, not ${target}. Open Claude Code in ${target}'s folder to hand Claude its issues.`,
+      { timeoutMs: 10_000 },
+    )
+    return
+  }
+
+  await setActive($, { number: issue.number, state: 'queued' })
+  let outcome: 'started' | 'dropped' | undefined
+  const submitted = $.prompt.submit({ text: workPrompt(target, issue) }).then(
+    result => {
+      outcome = result.drop === undefined ? 'started' : 'dropped'
+    },
+    () => {
+      outcome = 'dropped'
+    },
+  )
+  await Promise.race([submitted, $.clock.sleep(500)])
+  if (outcome === undefined) {
+    $.ui.toast(`#${issue.number} is queued: Claude starts on it once it finishes the current task.`, { timeoutMs: 8_000 })
+  }
+  await submitted
+  if ((await read($, active))?.number !== issue.number) return
+  if (outcome === 'dropped') {
+    await setActive($, null)
+    $.ui.toast(`#${issue.number} was not handed to Claude.`)
+    return
+  }
+  await setActive($, { number: issue.number, state: 'working' })
 }
 
 export const register: Register = on => {
@@ -696,7 +739,8 @@ export const register: Register = on => {
 
     const cards = list.map(issue => {
       const isOpenHere = opened?.number === issue.number
-      const isWorking = working === issue.number
+      const handed = working?.number === issue.number ? working.state : null
+      const isWorking = handed !== null
       const shownLabels = chips(issue.labels)
       const about = meta(issue, now)
       const pr = issue.pr === null ? null : { ...issue.pr, ...prBadge(issue.pr) }
@@ -740,7 +784,7 @@ export const register: Register = on => {
           <Box flexDirection="row" columnGap={3} marginTop={1}>
             <Button
               key={`work:${issue.number}`}
-              label={isWorking ? '● Working on it' : 'Work on it'}
+              label={handed === 'queued' ? '◷ Queued' : handed === 'working' ? '● Working on it' : 'Work on it'}
               plain
               onPress={() => void workOn($, issue)}
             />
