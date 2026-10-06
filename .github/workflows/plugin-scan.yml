@@ -1,0 +1,21 @@
+# Scans the mods with the HOL plugin scanner on every push and pull request: secrets, dangerous
+# hooks, supply-chain issues. Read-only, no secrets, actions pinned to exact commits.
+name: Plugin Security Scan
+
+on: [pull_request, push]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: hashgraph-online/ai-plugin-scanner-action@ac513da02cd2d28e6da5593e55add3f5b4cdce1e # v1.2.767
+        with:
+          plugin_dir: "."
+          min_score: 80
+          fail_on_severity: high
