@@ -2,6 +2,10 @@
 
 A To do / Doing / Done board in a side pane, filled as Claude works, and by you.
 
+<img src="docs/board.png" alt="The Board pane: a progress bar, To do, Doing and Done columns of cards marked as Claude's or from a plan, and a New card button" width="380">
+
+<sub>The screenshot shows made-up cards.</sub>
+
 - **Claude's to-do list:** the list Claude keeps while it works becomes cards, which move to Doing and Done as Claude goes. The first cards open the pane.
 - **Approved plans:** when you approve a plan, its steps (its numbered items, else its bullets or step headings) go to To do.
 - **A board tool for Claude:** in any chat, Claude can add, move and remove cards: ask it to "put that on the board", or let it note follow-ups it is not doing now.

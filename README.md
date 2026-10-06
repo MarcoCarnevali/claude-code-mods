@@ -46,6 +46,8 @@ A side pane listing a repository's GitHub issues as cards, with tabs, search, a 
 
 ### task-board
 
+<img src="task-board/docs/board.png" alt="The task-board pane in Claude Code" width="380">
+
 A To do / Doing / Done board in a side pane. Claude's to-do list and the plans you approve fill it as Claude works, you add your own cards, and Claude has a board tool to add, move and remove cards when you ask. **Work on it** hands a card to Claude. `/board` opens it.
 
 ```
