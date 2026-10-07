@@ -137,13 +137,136 @@ function describeGradle(args: readonly string[]): Omit<BuildCommand, 'command'> 
   }
 }
 
+export const TOOL_NAME: Record<BuildTool, string> = {
+  xcodebuild: 'xcodebuild',
+  gradle: 'Gradle',
+  swift: 'SwiftPM',
+  fastlane: 'fastlane',
+  flutter: 'Flutter',
+  'react-native': 'React Native',
+}
+
+/**
+ * Whose output a build prints, so whose to read it as: Xcode's (the Swift
+ * compiler's, XCTest's) or Gradle's. fastlane, Flutter and React Native run
+ * one or the other underneath, by platform.
+ */
+export function familyOf(tool: BuildTool, platform: BuildPlatform): 'xcodebuild' | 'gradle' {
+  if (tool === 'gradle') return 'gradle'
+  if (tool === 'xcodebuild' || tool === 'swift') return 'xcodebuild'
+
+  return platform === 'android' ? 'gradle' : 'xcodebuild'
+}
+
+/** `swift build` and `swift test`: SwiftPM, built for this Mac. */
+function describeSwift(args: readonly string[]): Omit<BuildCommand, 'command'> | null {
+  const [action] = args
+  if (action !== 'build' && action !== 'test') return null
+  const product = valueOf(args, '--product') ?? valueOf(args, '--target') ?? valueOf(args, '--filter')
+
+  return {
+    platform: 'macos',
+    tool: 'swift',
+    title: `swift ${action}`,
+    detail: [valueOf(args, '-c') ?? valueOf(args, '--configuration'), product].filter(Boolean).join(' · '),
+  }
+}
+
+// fastlane's own commands, which run no lane.
+const FASTLANE_INFO = new Set([
+  'init', 'lanes', 'list', 'env', 'action', 'actions', 'help', 'docs', 'search_plugins', 'new_plugin',
+  'add_plugin', 'install_plugins', 'update_plugins', 'update_fastlane', 'enable_auto_complete', 'run', 'socket_server',
+])
+
+/** `fastlane [ios|android|mac] <lane> [key:value …]`: the lane, on the platform it names (iOS when none). */
+function describeFastlane(args: readonly string[]): Omit<BuildCommand, 'command'> | null {
+  const named = args.filter(arg => !arg.startsWith('-'))
+  if (named.length === 0 || args.includes('--version') || FASTLANE_INFO.has(named[0] ?? '')) return null
+  const first = named[0] ?? ''
+  const platform: BuildPlatform = first === 'android' ? 'android' : first === 'mac' ? 'macos' : 'ios'
+  const isPlatform = first === 'ios' || first === 'android' || first === 'mac'
+  const lane = isPlatform ? named[1] : first
+  if (lane === undefined || lane.includes(':')) return null
+
+  return {
+    platform,
+    tool: 'fastlane',
+    title: `fastlane ${isPlatform ? `${first} ` : ''}${lane}`,
+    detail: named.slice(isPlatform ? 2 : 1).filter(arg => arg.includes(':')).slice(0, 2).join(' '),
+  }
+}
+
+const FLUTTER_TARGETS: Record<string, BuildPlatform> = { apk: 'android', appbundle: 'android', ios: 'ios', ipa: 'ios', macos: 'macos' }
+
+/** `flutter build <target>`, for the targets that build an app on a platform the pane knows. */
+function describeFlutter(args: readonly string[]): Omit<BuildCommand, 'command'> | null {
+  const [action, target = ''] = args
+  const platform = FLUTTER_TARGETS[target]
+  if (action !== 'build' || platform === undefined) return null
+  const mode = args.find(arg => arg === '--release' || arg === '--debug' || arg === '--profile')?.slice(2)
+  const flavor = valueOf(args, '--flavor')
+
+  return {
+    platform,
+    tool: 'flutter',
+    title: `flutter build ${target}`,
+    detail: [mode, flavor === undefined ? undefined : `flavor ${flavor}`].filter(Boolean).join(' · '),
+  }
+}
+
+/** `react-native run-ios|run-android` and `expo run:ios|run:android`. */
+function describeReactNative(program: string, args: readonly string[]): Omit<BuildCommand, 'command'> | null {
+  const [action = ''] = args
+  const target =
+    program === 'expo'
+      ? action.match(/^run:(ios|android)$/)?.[1]
+      : program === 'react-native' || program === 'rnc-cli'
+        ? action.match(/^run-(ios|android)$/)?.[1]
+        : undefined
+  if (target === undefined) return null
+  const device = valueOf(args, '--simulator') ?? valueOf(args, '--device') ?? valueOf(args, '--udid')
+  const mode = valueOf(args, '--mode') ?? valueOf(args, '--configuration') ?? valueOf(args, '--variant')
+
+  return {
+    platform: target === 'android' ? 'android' : 'ios',
+    tool: 'react-native',
+    title: `${program === 'expo' ? 'expo' : 'react-native'} ${action}`,
+    detail: [mode, device].filter(Boolean).join(' · '),
+  }
+}
+
+/**
+ * Drops what runs a package's command (`npx`, `bunx`, `bundle exec`, `pnpm
+ * exec`, `yarn dlx`, a bare `yarn`) from the front of `args`, in place.
+ */
+function dropRunners(args: string[]): void {
+  for (;;) {
+    const [first, second] = args
+    if (first === 'npx' || first === 'bunx') {
+      args.shift()
+      while ((args[0] ?? '').startsWith('-')) args.shift()
+    } else if (first === 'bundle' && second === 'exec') {
+      args.splice(0, 2)
+    } else if ((first === 'pnpm' || first === 'yarn') && (second === 'exec' || second === 'dlx')) {
+      args.splice(0, 2)
+    } else if ((first === 'pnpm' || first === 'yarn') && (second === 'react-native' || second === 'expo')) {
+      args.shift()
+    } else {
+      return
+    }
+  }
+}
+
 /** Commands that run the command after them: `time xcodebuild …`, `xcrun xcodebuild …`. */
 const LEADING_COMMANDS = new Set(['time', 'xcrun', 'nice', 'env', 'command', 'exec'])
 
 /**
- * Whether `command` runs an Xcode or Gradle build, and what it builds. A
- * command's first word decides, after `env`-style assignments, `time`,
- * `xcrun` and `nice`; `xcodebuild -list` and `gradle tasks` are not builds.
+ * Whether `command` runs a build the pane follows, and what it builds:
+ * xcodebuild, Gradle, `swift build`/`test`, a fastlane lane, `flutter build`,
+ * `react-native run-*` or `expo run:*`. A command's first word decides, after
+ * `env`-style assignments, `time`, `xcrun`, `nice` and what runs a package's
+ * command (`npx`, `bundle exec`); `xcodebuild -list` and `gradle tasks` are
+ * not builds.
  */
 export function detectBuild(command: string): BuildCommand | null {
   for (const part of segments(command)) {
@@ -156,6 +279,7 @@ export function detectBuild(command: string): BuildCommand | null {
         break
       }
     }
+    dropRunners(args)
     const [program = '', ...rest] = args
     const name = base(program)
     if (name === 'xcodebuild') {
@@ -166,6 +290,15 @@ export function detectBuild(command: string): BuildCommand | null {
       const found = describeGradle(rest)
       if (found !== null) return { ...found, command: part }
     }
+    const other =
+      name === 'swift'
+        ? describeSwift(rest)
+        : name === 'fastlane'
+          ? describeFastlane(rest)
+          : name === 'flutter'
+            ? describeFlutter(rest)
+            : describeReactNative(name, rest)
+    if (other !== null) return { ...other, command: part }
   }
 
   return null
@@ -209,6 +342,8 @@ const PATH = String.raw`([^\s:][^\s:]*\.[A-Za-z0-9]+)`
 const XCODE_DIAGNOSTIC = new RegExp(String.raw`^${PATH}:(\d+)(?::\d+)?: (error|warning): (.+)$`)
 const KOTLIN_DIAGNOSTIC = new RegExp(String.raw`^([ew]): (?:file:\/\/)?${PATH}:(\d+)(?::\d+)?:? (.+)$`)
 const JAVA_DIAGNOSTIC = new RegExp(String.raw`^([^\s:][^\s:]*\.java):(\d+): (error|warning): (.+)$`)
+// Dart's `lib/main.dart:12:5: Error: Undefined name 'x'.`, as `flutter build` prints it.
+const DART_DIAGNOSTIC = new RegExp(String.raw`^${PATH}:(\d+):(\d+): (Error|Warning): (.+)$`)
 // `error: …`, and a tool's own `xcodebuild: error: …` (a missing scheme, a bad destination).
 const BARE_ERROR = /^(?:[\w.-]+: )?(?:error|ERROR): (.+)$/
 
@@ -218,7 +353,11 @@ const BARE_ERROR = /^(?:[\w.-]+: )?(?:error|ERROR): (.+)$/
  * tests when it ran some. The build tool's own last word decides
  * (`** BUILD SUCCEEDED **`, `BUILD FAILED in 3s`); without one, `isError`.
  */
-export function parseOutput(tool: BuildTool, output: string, isError: boolean): BuildOutcome {
+export function parseOutput(tool: BuildTool, output: string, isError: boolean, platform: BuildPlatform = 'ios'): BuildOutcome {
+  const family = familyOf(tool, platform)
+  // The wrapping tool's own last word, read after the family's: fastlane's and Flutter's come last.
+  let toolVerdict: boolean | null = null
+  let isSwiftBuilt = false
   const errors: BuildIssue[] = []
   const warnings: BuildIssue[] = []
   const seen = new Set<string>()
@@ -255,12 +394,44 @@ export function parseOutput(tool: BuildTool, output: string, isError: boolean): 
   }
 
   lines.forEach((raw, index) => {
-    const line = raw.replace(/\r$/, '').trimEnd()
+    const line = withoutStamp(raw.replace(/\r$/, '').trimEnd())
+    if (tool === 'swift' && /^Build complete!/.test(line)) isSwiftBuilt = true
+    if (tool === 'fastlane') {
+      if (/fastlane\.tools finished successfully/.test(line)) toolVerdict = true
+      if (/fastlane finished with errors/.test(line)) toolVerdict = false
+      const said = line.match(/^\[!\] (.+)$/)
+      if (said) add({ severity: 'error', file: null, line: null, message: said[1] ?? '' })
+    }
+    if (tool === 'flutter') {
+      if (/^✓ Built /.test(line)) toolVerdict = true
+      if (/^(Gradle task .+ failed with exit code|Encountered error while building|Error building|Error: .*Gradle build failed)/.test(line)) {
+        toolVerdict = false
+      }
+      const dart = line.match(DART_DIAGNOSTIC)
+      if (dart) {
+        add({ severity: dart[4] === 'Warning' ? 'warning' : 'error', file: dart[1] ?? null, line: Number(dart[2]), message: dart[5] ?? '' })
+        return
+      }
+      const xcode = line.match(/^Error \(Xcode\): (.+)$/)
+      if (xcode) {
+        add({ severity: 'error', file: null, line: null, message: xcode[1] ?? '' })
+        return
+      }
+    }
+    if (tool === 'react-native') {
+      if (/^success Successfully (built|launched|installed)/.test(line)) toolVerdict = true
+      const failed = line.match(/^error (Failed to (?:build|install) .+)$/)
+      if (failed) {
+        toolVerdict = false
+        add({ severity: 'error', file: null, line: null, message: failed[1] ?? '' })
+        return
+      }
+    }
     const failedTest = failedTestOf(line.trimStart())
     if (failedTest !== null && !failedTests.includes(failedTest) && failedTests.length < ISSUE_LIMIT) {
       failedTests.push(failedTest)
     }
-    if (tool === 'xcodebuild') {
+    if (family === 'xcodebuild') {
       const swift = swiftTestingOf(line.trimStart())
       if (swift !== null) {
         const run = swift.text.match(/^Test run with (\d+) tests?\b/)
@@ -314,8 +485,11 @@ export function parseOutput(tool: BuildTool, output: string, isError: boolean): 
     }
   })
 
+  // SwiftPM says "Build complete!" before any test runs: built, and no test failed, is its success.
+  if (tool === 'swift' && verdict === null && isSwiftBuilt && failedTests.length === 0 && errorCount === 0) verdict = true
+  const finalWord: boolean | null = toolVerdict ?? verdict
   // No final marker: an error printed means it failed, even when a pipe (`| tail`) hid the exit code.
-  const succeeded: boolean = verdict ?? (errorCount > 0 || failedTests.length > 0 ? false : !isError)
+  const succeeded: boolean = finalWord ?? (errorCount > 0 || failedTests.length > 0 ? false : !isError)
   if (!succeeded && errorCount === 0 && wentWrong !== null) {
     add({ severity: 'error', file: null, line: null, message: wentWrong })
   }
@@ -325,7 +499,7 @@ export function parseOutput(tool: BuildTool, output: string, isError: boolean): 
     tests = { total: (counted?.total ?? 0) + swiftTotal, failed: (counted?.failed ?? 0) + swiftFailed }
   }
 
-  const full = formatLog(tool, output, Number.POSITIVE_INFINITY)
+  const full = formatLog(tool, output, Number.POSITIVE_INFINITY, platform)
 
   return {
     status: succeeded ? 'succeeded' : 'failed',
@@ -336,7 +510,7 @@ export function parseOutput(tool: BuildTool, output: string, isError: boolean): 
     tests,
     failedTests,
     testIssues,
-    log: formatLog(tool, output),
+    log: formatLog(tool, output, LOG_LINES, platform),
   }
 }
 
@@ -856,10 +1030,10 @@ function formatGradle(lines: readonly string[], limit: number): LogLine[] {
  * lines, the tools' debug logging and the like are left out; a line the
  * formatter does not know stays as it is.
  */
-export function formatLog(tool: BuildTool, output: string, limit = LOG_LINES): LogLine[] {
-  const lines = output.split('\n')
+export function formatLog(tool: BuildTool, output: string, limit = LOG_LINES, platform: BuildPlatform = 'ios'): LogLine[] {
+  const lines = output.split('\n').map(withoutStamp)
 
-  return tool === 'xcodebuild' ? formatXcode(lines, limit) : formatGradle(lines, limit)
+  return familyOf(tool, platform) === 'xcodebuild' ? formatXcode(lines, limit) : formatGradle(lines, limit)
 }
 
 /** A log as the pane draws it: lines, each run of code lines one block. */
@@ -987,7 +1161,7 @@ export function upgrade(run: BuildRun): BuildRun {
     warnings: old.warnings ?? [],
     failedTests: old.failedTests ?? [],
     testIssues: old.testIssues ?? [],
-    log: old.log ?? (old.outputTail === undefined ? [] : formatLog(run.tool, old.outputTail)),
+    log: old.log ?? (old.outputTail === undefined ? [] : formatLog(run.tool, old.outputTail, LOG_LINES, run.platform)),
     logFile: old.logFile ?? null,
   }
 }
@@ -1065,7 +1239,8 @@ export function isStoredRun(value: unknown): value is BuildRun {
     typeof run.command === 'string' &&
     typeof run.startedAt === 'number' &&
     (run.platform === 'ios' || run.platform === 'macos' || run.platform === 'android') &&
-    (run.tool === 'xcodebuild' || run.tool === 'gradle') &&
+    typeof run.tool === 'string' &&
+    run.tool in TOOL_NAME &&
     Array.isArray(run.errors)
   )
 }
@@ -1079,6 +1254,24 @@ export function touchProject(stored: unknown, key: string): { projects: string[]
   const projects = [key, ...known]
 
   return { projects: projects.slice(0, PROJECTS_KEPT), dropped: projects.slice(PROJECTS_KEPT) }
+}
+
+/** A line without the `[14:02:11]: ` stamp fastlane puts before each one. */
+export function withoutStamp(line: string): string {
+  return line.replace(/^\[\d\d:\d\d:\d\d\]: /, '')
+}
+
+/**
+ * Which editor opens a diagnostic's file: Xcode for Apple sources, Android
+ * Studio for Android ones, the file's default app for the rest (Dart,
+ * JavaScript, TypeScript).
+ */
+export function editorOf(file: string, platform: BuildPlatform): 'Xcode' | 'Android Studio' | 'Editor' {
+  const ext = file.split('.').at(-1)?.toLowerCase() ?? ''
+  if (['swift', 'm', 'mm', 'h', 'c', 'cc', 'cpp', 'xib', 'storyboard', 'plist', 'xcstrings'].includes(ext)) return 'Xcode'
+  if (['kt', 'kts', 'java', 'gradle'].includes(ext) || (ext === 'xml' && platform === 'android')) return 'Android Studio'
+
+  return 'Editor'
 }
 
 /** `path:line` as a person scans it: the file's name and the line. */
@@ -1359,4 +1552,114 @@ export function metaLine(run: Pick<BuildRun, 'platform' | 'detail' | 'startedAt'
   const detail = run.detail === platform ? '' : run.detail
 
   return [platform, detail, clockTime(run.startedAt)].filter(Boolean).join(' · ')
+}
+
+/** One bar of a build's trend: how long a run took, whether it failed, and whether it is the one in the card. */
+export type TrendPoint = { ms: number; isFailed: boolean; isCurrent: boolean }
+
+/** How many runs a trend shows. */
+export const TREND_RUNS = 10
+
+/**
+ * The same build's finished runs up to `run`, oldest first, at most
+ * `TREND_RUNS`: what the trend draws. `runs` is newest first.
+ */
+export function trendOf(run: BuildRun, runs: readonly BuildRun[]): TrendPoint[] {
+  return runs
+    .filter(
+      other =>
+        other.startedAt <= run.startedAt &&
+        other.endedAt !== null &&
+        (other.status === 'succeeded' || other.status === 'failed') &&
+        other.platform === run.platform &&
+        other.tool === run.tool &&
+        other.title === run.title &&
+        other.detail === run.detail,
+    )
+    .slice(0, TREND_RUNS)
+    .reverse()
+    .map(other => ({ ms: (other.endedAt ?? other.startedAt) - other.startedAt, isFailed: other.status === 'failed', isCurrent: other.id === run.id }))
+}
+
+/** The median of `values`, 0 for none. */
+export function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  if (sorted.length === 0) return 0
+
+  return sorted.length % 2 === 1 ? (sorted[middle] ?? 0) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+}
+
+/**
+ * What a trend says in words: the median of the runs that succeeded, and how
+ * the run in the card compares with it ("median 2m 11s · 12s faster").
+ */
+export function trendSummary(points: readonly TrendPoint[]): string {
+  const succeeded = points.filter(point => !point.isFailed).map(point => point.ms)
+  if (succeeded.length === 0) return ''
+  const middle = median(succeeded)
+  const current = points.find(point => point.isCurrent)
+  const diff = current === undefined || current.isFailed ? 0 : current.ms - middle
+
+  return [
+    `median ${duration(middle)}`,
+    Math.abs(diff) < 2_000 ? '' : diff < 0 ? `${duration(-diff)} faster` : `${duration(diff)} slower`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/**
+ * A trend as an SVG bar chart `width` pixels wide: a bar per run, its height
+ * its duration over the trend's floor, failed runs red, the run in the card in the accent color, a
+ * dashed line at the median of the runs that succeeded; colors follow the
+ * light or dark scheme.
+ */
+export function trendSvg(points: readonly TrendPoint[], width: number, height = 40): string {
+  const longest = Math.max(1, ...points.map(point => point.ms))
+  const floor = trendFloor(points)
+  const scaled = (ms: number) => Math.max(3, Math.round(((ms - floor) / Math.max(1, longest - floor)) * (height - 2)))
+  const gap = 4
+  const bar = Math.max(4, Math.min(24, Math.floor((width - gap * (points.length - 1)) / Math.max(1, points.length))))
+  const bars = points
+    .map((point, index) => {
+      const tall = scaled(point.ms)
+      const kind = point.isFailed ? 'f' : point.isCurrent ? 'c' : 'b'
+      return `<rect class='${kind}' x='${index * (bar + gap)}' y='${height - tall}' width='${bar}' height='${tall}' rx='2'/>`
+    })
+    .join('')
+  const succeeded = points.filter(point => !point.isFailed).map(point => point.ms)
+  const line =
+    succeeded.length === 0
+      ? ''
+      : `<line class='m' x1='0' x2='${points.length * (bar + gap) - gap}' y1='${height - scaled(median(succeeded))}' y2='${height - scaled(median(succeeded))}'/>`
+
+  return (
+    `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'>` +
+    '<style>.b{fill:#afb8c1}.c{fill:#d97757}.f{fill:#cf222e}.m{stroke:#57606a;stroke-width:1;stroke-dasharray:3 3}' +
+    '@media(prefers-color-scheme:dark){.b{fill:#545d68}.m{stroke:#9198a1}}</style>' +
+    bars +
+    line +
+    '</svg>'
+  )
+}
+
+/**
+ * Where a trend's bars start: a little under its fastest successful run, so
+ * runs a few seconds apart look it, as a sparkline does; 0 with none.
+ */
+function trendFloor(points: readonly TrendPoint[]): number {
+  const succeeded = points.filter(point => !point.isFailed).map(point => point.ms)
+
+  return succeeded.length === 0 ? 0 : Math.min(...succeeded) * 0.8
+}
+
+const TREND_BLOCKS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'] as const
+
+/** A trend in a terminal: one block character per run, as tall as its duration. */
+export function trendBlocks(points: readonly TrendPoint[]): string[] {
+  const longest = Math.max(1, ...points.map(point => point.ms))
+  const floor = trendFloor(points)
+
+  return points.map(point => TREND_BLOCKS[Math.min(7, Math.max(0, Math.round(((point.ms - floor) / Math.max(1, longest - floor)) * 7)))] ?? '▁')
 }

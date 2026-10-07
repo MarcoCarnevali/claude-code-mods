@@ -17,7 +17,12 @@ import {
   progressText,
   remaining,
   segments,
+  editorOf,
+  median,
   touchProject,
+  trendBlocks,
+  trendOf,
+  trendSummary,
   upgrade,
   whenLabel,
   words,
@@ -743,6 +748,141 @@ describe('history', () => {
     const noon = new Date(2026, 9, 6, 12, 0).getTime()
     expect(whenLabel(noon - 2 * 60 * 60_000, noon)).toBe('10:00')
     expect(whenLabel(noon - 24 * 60 * 60_000, noon)).toBe('5 Oct 12:00')
+  })
+})
+
+describe('more build tools', () => {
+  test('detectBuild knows SwiftPM, fastlane, Flutter, React Native and Expo, through npx and bundle exec', () => {
+    const seen = (command: string) => {
+      const found = detectBuild(command)
+      return found === null ? null : [found.platform, found.tool, found.title, found.detail]
+    }
+    expect(seen('swift build -c release --product Orbit')).toEqual(['macos', 'swift', 'swift build', 'release · Orbit'])
+    expect(seen('swift test --filter TripTests')).toEqual(['macos', 'swift', 'swift test', 'TripTests'])
+    expect(seen('bundle exec fastlane ios beta')).toEqual(['ios', 'fastlane', 'fastlane ios beta', ''])
+    expect(seen('fastlane android deploy track:internal')).toEqual(['android', 'fastlane', 'fastlane android deploy', 'track:internal'])
+    expect(seen('fastlane test')).toEqual(['ios', 'fastlane', 'fastlane test', ''])
+    expect(seen('cd app && flutter build apk --release --flavor prod')).toEqual(['android', 'flutter', 'flutter build apk', 'release · flavor prod'])
+    expect(seen('flutter build ipa')).toEqual(['ios', 'flutter', 'flutter build ipa', ''])
+    expect(seen('npx react-native run-ios --simulator "iPhone 16"')).toEqual(['ios', 'react-native', 'react-native run-ios', 'iPhone 16'])
+    expect(seen('yarn react-native run-android --mode release')).toEqual(['android', 'react-native', 'react-native run-android', 'release'])
+    expect(seen('npx expo run:ios')).toEqual(['ios', 'react-native', 'expo run:ios', ''])
+    // Not builds: SwiftPM's other commands, fastlane's own, Flutter's tests and web, Expo's dev server.
+    for (const command of ['swift package resolve', 'swift --version', 'fastlane lanes', 'fastlane init', 'fastlane --version', 'flutter test', 'flutter build web', 'flutter run', 'npx expo start', 'npx react-native start']) {
+      expect(detectBuild(command)).toBeNull()
+    }
+  })
+
+  test('SwiftPM: compiler errors, "Build complete!", and tests that fail after it', () => {
+    const failed = parseOutput('swift', "Sources/Orbit/Trip.swift:12:9: error: cannot find 'legs' in scope\nerror: fatalError", true, 'macos')
+    expect(failed).toMatchObject({ status: 'failed', errorCount: 2 })
+    expect(failed.errors[0]).toMatchObject({ file: 'Sources/Orbit/Trip.swift', line: 12 })
+    expect(parseOutput('swift', 'Building for debugging...\nBuild complete! (4.21s)', false, 'macos').status).toBe('succeeded')
+    const tests = parseOutput(
+      'swift',
+      "Build complete! (2.0s)\nTest Case '-[OrbitTests.TripTests testLegs]' failed (0.010 seconds).\nExecuted 4 tests, with 1 failure (0 unexpected) in 0.1 (0.1) seconds",
+      true,
+      'macos',
+    )
+    expect(tests).toMatchObject({ status: 'failed', tests: { total: 4, failed: 1 }, failedTests: ['TripTests.testLegs'] })
+  })
+
+  test("fastlane: its time stamps dropped, xcodebuild's errors read, and its own last word", () => {
+    const output = [
+      '[14:02:11]: ▸ Compiling Trip.swift',
+      "[14:02:12]: ▸ /Users/dev/Orbit/Orbit/Trip.swift:3:5: error: cannot find 'legs' in scope",
+      '[14:02:12]: /Users/dev/Orbit/Orbit/Trip.swift:3:5: error: cannot find \'legs\' in scope',
+      '[!] Error building the application - see the log above',
+      'fastlane finished with errors',
+    ].join('\n')
+    const outcome = parseOutput('fastlane', output, true, 'ios')
+    expect(outcome.status).toBe('failed')
+    expect(outcome.errors.map(error => error.message)).toEqual([
+      "cannot find 'legs' in scope",
+      'Error building the application - see the log above',
+    ])
+    expect(outcome.log.map(line => line.text)).toContain('Compiling Trip.swift')
+    expect(parseOutput('fastlane', '[14:05:00]: ** ARCHIVE SUCCEEDED **\nfastlane.tools finished successfully 🎉', false).status).toBe('succeeded')
+  })
+
+  test("Flutter: Dart's errors, Gradle's underneath on Android, and its own result line", () => {
+    const failed = parseOutput(
+      'flutter',
+      "lib/main.dart:12:5: Error: Undefined name 'tripStore'.\nlib/map.dart:3:1: Warning: Unused import.\nFAILURE: Build failed with an exception.\nGradle task assembleRelease failed with exit code 1",
+      true,
+      'android',
+    )
+    expect(failed).toMatchObject({ status: 'failed', errorCount: 1, warningCount: 1 })
+    expect(failed.errors[0]).toMatchObject({ file: 'lib/main.dart', line: 12, message: "Undefined name 'tripStore'." })
+    expect(parseOutput('flutter', 'Running Xcode build...\nXcode build done.\n✓ Built build/ios/iphoneos/Runner.app (24.1MB)', false, 'ios').status).toBe('succeeded')
+    expect(parseOutput('flutter', 'Error (Xcode): No profiles for com.example.orbit were found', true, 'ios').errors[0]?.message).toBe(
+      'No profiles for com.example.orbit were found',
+    )
+  })
+
+  test('React Native and Expo: the platform build underneath, and their own success and failure lines', () => {
+    const ios = parseOutput('react-native', "/Users/dev/orbit/ios/Orbit/AppDelegate.mm:9:3: error: use of undeclared identifier 'RCTBridge'\nerror Failed to build iOS project.", true, 'ios')
+    expect(ios.status).toBe('failed')
+    expect(ios.errors.map(error => error.message)).toEqual(["use of undeclared identifier 'RCTBridge'", 'Failed to build iOS project.'])
+    const android = parseOutput('react-native', "e: file:///Users/dev/orbit/android/app/src/main/java/com/orbit/MainActivity.kt:4:1 Unresolved reference: Foo\nBUILD FAILED in 12s", true, 'android')
+    expect(android).toMatchObject({ status: 'failed', errorCount: 1 })
+    expect(parseOutput('react-native', 'info Installing the app...\nsuccess Successfully launched the app', false, 'ios').status).toBe('succeeded')
+  })
+
+  test('each file opens in the editor for it, and the card names the tool', async ($, on) => {
+    expect(editorOf('/a/Trip.swift', 'ios')).toBe('Xcode')
+    expect(editorOf('/a/MainActivity.kt', 'android')).toBe('Android Studio')
+    expect(editorOf('/a/res/layout/main.xml', 'android')).toBe('Android Studio')
+    expect(editorOf('lib/main.dart', 'android')).toBe('Editor')
+    expect(editorOf('src/App.tsx', 'ios')).toBe('Editor')
+
+    const state = fake(on)
+    state.paths.push('/work/lib/main.dart')
+    state.bash = { ...state.bash, stdout: "lib/main.dart:12:5: Error: Undefined name 'tripStore'.\nGradle task assembleRelease failed with exit code 1", isError: true }
+    await bash($, 'flutter build apk --release')
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect((await ui.find({ key: 'open:error:0' }))?.text).toBe('Editor')
+    await ui.press({ key: 'open:error:0' })
+    expect(state.runs).toEqual([['open', '/work/lib/main.dart']])
+    expect(state.toasts).toEqual(['Android build failed in 0s · 1 error'])
+  })
+})
+
+describe('trend', () => {
+  test('after three runs of a build the card charts them: a bar each, and the median', async ($, on) => {
+    const state = fake(on)
+    state.bash.stdout = GRADLE_SUCCEEDED
+    for (const took of [60_000, 50_000, 40_000]) {
+      const release = hold(state)
+      const call = bash($, './gradlew assembleDebug')
+      await state.clock.settle()
+      await state.clock.advance(took)
+      release()
+      await call
+      await state.clock.advance(60_000)
+    }
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect((await ui.find({ type: 'Svg' }))?.props.alt).toBe('Last 3 runs: 1m 00s, 50s, 40s')
+    expect(await ui.find({ type: 'Text', text: 'Last 3 runs · median 50s · 10s faster' })).toBeDefined()
+    await ui.unmount()
+    const terminal = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect((await terminal.findAll({ type: 'Text' })).map(one => one.text).join('')).toContain('█▆▃')
+  })
+
+  test('trendOf takes the same build only, oldest first; the summary skips failed runs', () => {
+    const run = (id: string, startedAt: number, took: number, status: 'succeeded' | 'failed', title = 'Orbit · build'): BuildRun => ({
+      id, platform: 'ios', tool: 'xcodebuild', title, detail: '', command: 'xcodebuild build', fullCommand: 'xcodebuild build',
+      startedAt, endedAt: startedAt + took, status, errors: [], errorCount: 0, warnings: [], warningCount: 0, tests: null,
+      failedTests: [], testIssues: [], log: [], logFile: null,
+    })
+    const runs = [run('d', 400, 30_000, 'succeeded'), run('x', 350, 5_000, 'succeeded', 'Other'), run('c', 300, 9_000, 'failed'), run('b', 200, 50_000, 'succeeded'), run('a', 100, 40_000, 'succeeded')]
+    const points = trendOf(runs[0] as BuildRun, runs)
+    expect(points.map(point => [point.ms, point.isFailed, point.isCurrent])).toEqual([
+      [40_000, false, false], [50_000, false, false], [9_000, true, false], [30_000, false, true],
+    ])
+    expect(median([30_000, 40_000, 50_000])).toBe(40_000)
+    expect(trendSummary(points)).toBe('median 40s · 10s faster')
+    expect(trendBlocks(points)).toEqual(['▅', '█', '▁', '▃'])
   })
 })
 

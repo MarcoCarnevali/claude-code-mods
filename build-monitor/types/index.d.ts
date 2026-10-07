@@ -1,6 +1,7 @@
 export type BuildPlatform = 'ios' | 'macos' | 'android'
 
-export type BuildTool = 'xcodebuild' | 'gradle'
+/** What ran the build: Xcode, Gradle, SwiftPM, fastlane, Flutter or React Native (Expo included). */
+export type BuildTool = 'xcodebuild' | 'gradle' | 'swift' | 'fastlane' | 'flutter' | 'react-native'
 
 export type BuildFilter = 'all' | BuildPlatform
 

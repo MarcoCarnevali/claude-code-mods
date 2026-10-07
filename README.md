@@ -29,14 +29,14 @@ A mod is code that runs inside Claude Code on your machine, with the same access
 
 | Mod | What it does |
 | --- | --- |
-| [build-monitor](#build-monitor) | A pane that opens by itself when Claude runs an Xcode or Gradle build: a timer against the last run, then the failed tests and errors, and **Ask Claude to fix**. |
+| [build-monitor](#build-monitor) | A pane that opens by itself when Claude runs a build (Xcode, Gradle, SwiftPM, fastlane, Flutter, React Native): a timer against the last run, the failed tests and errors, **Ask Claude to fix**, and the build's trend. |
 | [github-issues](#github-issues) | A side pane listing a repository's GitHub issues. Filter and search them, read one, and press **Work on it** to hand it to Claude. |
 
 ### build-monitor
 
 <img src="build-monitor/docs/build.png" alt="The build-monitor pane in Claude Code" width="380">
 
-A pane that opens as soon as Claude starts `xcodebuild` or Gradle: a ring timer and progress bar against the build's last successful run, then the result. A failed build lists its failed tests and errors with the code they point at, **Open in Xcode / Android Studio**, and **Ask Claude to fix**; any build shows a readable log and its command. `/builds` opens it any time.
+A pane that opens as soon as Claude starts a build (`xcodebuild`, Gradle, `swift build`, a fastlane lane, `flutter build`, `react-native run-*` or `expo run:*`): a ring timer and progress bar against the build's last successful run, then the result. A failed build lists its failed tests and errors with the code they point at, **Open in Xcode / Android Studio**, and **Ask Claude to fix**; any build shows a readable log and its command. `/builds` opens it any time.
 
 ```
 /plugin install build-monitor@marco-mods

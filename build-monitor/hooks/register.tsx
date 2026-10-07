@@ -12,6 +12,7 @@ import {
   delta,
   detectBuild,
   duration,
+  editorOf,
   fixPrompt,
   forHistory,
   formatCommand,
@@ -31,7 +32,12 @@ import {
   runningHero,
   spinnerFrame,
   summary,
+  TOOL_NAME,
   testBadge,
+  trendBlocks,
+  trendOf,
+  trendSummary,
+  trendSvg,
   touchProject,
   upgrade,
   whenLabel,
@@ -251,12 +257,13 @@ async function openIssue($: EngineInterface, run: BuildRun, issue: BuildIssue): 
 
   const line = String(issue.line ?? 1)
   const attempts: string[][] = []
-  if (run.platform === 'android') {
+  const editor = editorOf(path, run.platform)
+  if (editor === 'Android Studio') {
     for (const launcher of STUDIO_LAUNCHERS) {
       if (await $.fs.exists(launcher)) attempts.push([launcher, '--line', line, path])
     }
     attempts.push(['open', '-a', 'Android Studio', path])
-  } else {
+  } else if (editor === 'Xcode') {
     attempts.push(['xed', '--line', line, path])
   }
   attempts.push(['open', path])
@@ -346,7 +353,7 @@ async function copyProblems($: EngineInterface, run: BuildRun, surface: RenderSu
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'builds', description: "Show the Xcode and Gradle builds Claude ran in this project" })
+    await $.command.register({ name: 'builds', description: 'Show the builds Claude ran in this project: Xcode, Gradle, SwiftPM, fastlane, Flutter, React Native' })
     const started = await next(e)
     // A reload drops the hook that was waiting on a build: its result never arrives here.
     // Builds an older version recorded lack the fields added since: fill them in.
@@ -397,7 +404,7 @@ export const register: Register = on => {
       return ran
     }
 
-    const outcome = parseOutput(found.tool, await outputOf($, record, ran.text), ran.isError === true)
+    const outcome = parseOutput(found.tool, await outputOf($, record, ran.text), ran.isError === true, found.platform)
     const done = await finish($, e.tool_use_id, { ...outcome, logFile: record?.persistedOutputPath ?? null })
     if (done !== undefined && done.endedAt !== null) {
       const tail = summary(done)
@@ -482,7 +489,6 @@ export const register: Register = on => {
     }
     const took = (one: BuildRun) => duration((one.endedAt ?? now) - one.startedAt)
     const tail = summary(run)
-    const editor = run.platform === 'android' ? 'Android Studio' : 'Xcode'
 
     // What opens under a finished build, one at a time: its warnings, its log, its command.
     const extras: Array<{ tab: DetailTab; label: string }> = [
@@ -505,8 +511,35 @@ export const register: Register = on => {
       .filter(Boolean)
       .join(' · ')
     const heroWidth = Math.max(240, Math.min(640, Math.floor((e.props.bodyColumns - 4) * 7.5)))
+    // The same build's recent runs, once there are a few to compare: under a finished build.
+    const trend = trendOf(run, list)
+    const trendView =
+      trend.length < 3 || run.status === 'running' ? null : (
+        <Box flexDirection="column" marginTop={1}>
+          {Svg !== undefined ? (
+            <Svg
+              source={trendSvg(trend, Math.min(heroWidth, trend.length * 28))}
+              alt={`Last ${trend.length} runs: ${trend.map(point => duration(point.ms)).join(', ')}`}
+              width={Math.min(heroWidth, trend.length * 28)}
+              height={40}
+            />
+          ) : (
+            <Box flexDirection="row">
+              {trendBlocks(trend).map((block, index) => {
+                const point = trend[index]
+                return (
+                  <Text {...(point?.isFailed === true ? { color: EDGE.failed } : point?.isCurrent === true ? { color: 'claude' } : { dimColor: true })}>
+                    {block}
+                  </Text>
+                )
+              })}
+            </Box>
+          )}
+          <Text dimColor>{[`Last ${trend.length} runs`, trendSummary(trend)].filter(Boolean).join(' · ')}</Text>
+        </Box>
+      )
     const live = runningHero({
-      label: `Building · ${PLATFORM_NAME[run.platform]} · ${run.tool === 'xcodebuild' ? 'xcodebuild' : 'Gradle'}`,
+      label: `Building · ${PLATFORM_NAME[run.platform]} · ${TOOL_NAME[run.tool]}`,
       title: run.title,
       detail: run.detail,
       elapsed: now - run.startedAt,
@@ -524,7 +557,7 @@ export const register: Register = on => {
           <Text bold color={color} wrap="truncate-end">
             {where(one) === '' ? 'Build' : where(one)}
           </Text>
-          {one.file !== null && <Button key={key} label={editor} plain dimColor onPress={() => void openIssue($, run, one)} />}
+          {one.file !== null && <Button key={key} label={editorOf(one.file, run.platform)} plain dimColor onPress={() => void openIssue($, run, one)} />}
         </Box>
         <Text wrap="wrap">{one.message}</Text>
         {hasCode && one.code !== undefined && (
@@ -550,7 +583,13 @@ export const register: Register = on => {
                   {where(found)}
                 </Text>
                 {found.file !== null && (
-                  <Button key={`open:test:${index}`} label={editor} plain dimColor onPress={() => void openIssue($, run, found)} />
+                  <Button
+                    key={`open:test:${index}`}
+                    label={editorOf(found.file, run.platform)}
+                    plain
+                    dimColor
+                    onPress={() => void openIssue($, run, found)}
+                  />
                 )}
               </Box>
               <Text wrap="wrap">{found.message}</Text>
@@ -657,6 +696,7 @@ export const register: Register = on => {
                   {verdict}
                 </Text>
               )}
+              {trendView}
               <Box flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center" marginTop={1}>
                 <Button
                   key="fix"
@@ -687,7 +727,7 @@ export const register: Register = on => {
             <Box flexDirection="column">
               <Box flexDirection="row" columnGap={1} alignItems="center">
                 {icon(run)}
-                <Text dimColor>{`${PLATFORM_NAME[run.platform]} · ${run.tool === 'xcodebuild' ? 'xcodebuild' : 'Gradle'}`}</Text>
+                <Text dimColor>{`${PLATFORM_NAME[run.platform]} · ${TOOL_NAME[run.tool]}`}</Text>
               </Box>
               <Text bold wrap="wrap">
                 {run.title}
@@ -705,6 +745,7 @@ export const register: Register = on => {
                 {tail !== '' && <Text dimColor>{`· ${tail}`}</Text>}
                 {compared !== '' && <Text dimColor>{`· ${compared}`}</Text>}
               </Box>
+              {trendView}
               {progress !== null && (
                 <Box flexDirection="column" marginTop={1}>
                   {Svg === undefined ? (
