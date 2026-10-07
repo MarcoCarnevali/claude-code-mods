@@ -9,6 +9,8 @@ A side pane in Claude Code that lists a repository's GitHub issues as cards.
 
 <sub>Screenshots show made-up repositories, people and issues.</sub>
 
+**[Watch the demo on X](https://x.com/marcocarne_/status/2107456270873796697)**
+
 - **Tabs:** Open, Assigned (with your count), Created, Closed
 - **Search and labels:** a search box (Enter runs a GitHub search) and a label picker. **Clear** resets both.
 - **Cards:** title, `#number` (opens the issue on GitHub), assignees, last update, comment count, linked pull request (open, draft, merged or closed), and labels as small pills in GitHub's colors
@@ -22,7 +24,7 @@ The pane shows the 40 most recently updated issues that match. A spinner shows w
 
 | Command | |
 | --- | --- |
-| `/issues` | Pick a repository: the session's own first, then the 30 you pushed to most recently (yours, collaborations and your organizations'), each with its open issue count |
+| `/issues` | Started in a folder whose repository is on GitHub: that repository's issues. Anywhere else: pick a repository, the 30 you pushed to most recently (yours, collaborations and your organizations'), each with its open issue count. **Switch repo** opens the picker from the issues |
 | `/issues owner/name` | Show that repository's issues |
 | `/issues .` | Show the session's repository (from the `origin` remote) |
 

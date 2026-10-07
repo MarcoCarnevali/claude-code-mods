@@ -469,7 +469,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'issues',
-      description: "Show GitHub issues in a side pane: pick a repository, or name one",
+      description: "Show GitHub issues in a side pane: this folder's repository, or pick or name one",
       argumentHint: '[owner/name | .]',
     })
     const started = await next(e)
@@ -488,7 +488,9 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'issues' }, async ($, e) => {
-    const arg = e.args.trim()
+    let arg = e.args.trim()
+    // Started in a folder whose repository is on GitHub, /issues alone shows its issues; elsewhere, the picker.
+    if (arg === '' && (await detectRepo($)) !== null) arg = '.'
     if (arg === '') {
       await openPane($)
       await showRepos($)
