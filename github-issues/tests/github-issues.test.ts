@@ -129,6 +129,14 @@ function slashIssues($: Engine, args = '') {
   })
 }
 
+/** Opens the picker the way a person does from the session's repository: Switch repo. */
+async function openPicker($: Engine) {
+  await slashIssues($, '.')
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'switch' })
+  await ui.unmount()
+}
+
 /** A `process.run` answer, as the host would give it. */
 function ran(stdout: string, exitCode = 0, stderr = '') {
   return { value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } }
@@ -546,7 +554,7 @@ describe('assignment alerts', () => {
     on('command.register', () => ({ value: { command: 'issues' } }))
     on('session.start', ($, e) => ({ cwd: e.cwd }))
     await $.session.start({ cwd: '/work/widgets', surface: 'desktop', isInteractive: true })
-    await slashIssues($)
+    await openPicker($)
 
     await fake.clock.advance(2 * 60_000)
     expect(fake.toasts).toEqual([])
@@ -573,10 +581,26 @@ describe('picker', () => {
     expect(await ui.findAll({ type: 'Link' })).toHaveLength(0)
   })
 
-  test('/issues alone lists repositories to pick, the session one first', async ($, on) => {
-    fakeGitHub(on)
+  test("/issues alone shows the issues of the folder's repository; outside one, the picker", async ($, on) => {
+    const fake = fakeGitHub(on)
+    const opened = await slashIssues($)
+    expect(opened.text).toBe('Showing acme/widgets issues.')
+    expect(fake.searches.at(-1)).toContain('repo:acme/widgets ')
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Link', text: '#42' })).toBeDefined()
+  })
+
+  test('/issues alone outside a GitHub repository opens the picker', async ($, on) => {
+    fakeGitHub(on, null)
     const opened = await slashIssues($)
     expect(opened.text).toBe('Choose a repository in the Issues pane.')
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: 'Choose a repository' })).toBeDefined()
+  })
+
+  test('Switch repo lists repositories to pick, the session one first', async ($, on) => {
+    fakeGitHub(on)
+    await openPicker($)
 
     for (const surface of SURFACES) {
       const ui = await $.ui.mount({ ...PANE, surface })
@@ -585,7 +609,8 @@ describe('picker', () => {
       expect(picks.map(one => one.key)).toEqual([pickKey('acme/widgets'), pickKey('other/thing')])
       expect(await ui.find({ type: 'Text', text: 'This session' })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /^other$/ })).toBeDefined()
-      expect((await ui.find({ key: pickKey('acme/widgets') }))?.text).toBe('acme/widgets')
+      // The repository shown when Switch repo was pressed is marked.
+      expect((await ui.find({ key: pickKey('acme/widgets') }))?.text).toBe('● acme/widgets')
       expect((await ui.find({ key: pickKey('other/thing') }))?.text).toBe('thing')
       expect(await ui.find({ type: 'Text', text: /^2 open · 5d$/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /^1 open · private · 2h$/ })).toBeDefined()
@@ -596,7 +621,7 @@ describe('picker', () => {
 
   test('picking a repository shows its issues; Switch repo and Back move between them', async ($, on) => {
     const fake = fakeGitHub(on)
-    await slashIssues($)
+    await openPicker($)
 
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     await ui.press({ key: pickKey('other/thing') })
@@ -615,7 +640,7 @@ describe('picker', () => {
 
   test('the picker filter narrows the list, and Enter opens a match or any owner/name', async ($, on) => {
     const fake = fakeGitHub(on)
-    await slashIssues($)
+    await openPicker($)
 
     for (const surface of ['terminal', 'desktop', 'vscode'] as const) {
       const ui = await $.ui.mount({ ...PANE, surface })
