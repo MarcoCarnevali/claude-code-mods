@@ -302,6 +302,21 @@ describe('dragging', () => {
     expect((await $.tool.call({ tool: TOOL, action: 'list' })).text).toMatch(/To do \(1\)/)
   })
 
+  test('the terminal drags too: its pane draws the same Client', async ($, on) => {
+    await fake($, on)
+    await $.tool.call({ tool: TOOL, action: 'add', title: 'Drag me' })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await ui.resize({ columns: 60, rows: 20, in: 'columns' })
+    expect(JSON.stringify(await ui.drawn())).toContain('"module":"hooks/columns.tsx"')
+
+    const at = layout([{ id: 'x', title: 'Drag me', column: 0, tag: '✦', isDone: false, isOpen: false, isBusy: false }], 60)
+    const y = (at.cards[0]?.top ?? 1) + 1
+    await ui.pointer({ type: 'down', x: 3, y, button: 'left' })
+    await ui.pointer({ type: 'move', x: 3 + at.columnWidth + 1, y, button: 'left' })
+    await ui.pointer({ type: 'up', x: 3 + at.columnWidth + 1, y, button: 'left' })
+    expect((await $.tool.call({ tool: TOOL, action: 'list' })).text).toMatch(/Doing \(1\)\n- \[c\w+\] Drag me/)
+  })
+
   test('a message naming no card, or no column, changes nothing', async ($, on) => {
     await fake($, on)
     await $.tool.call({ tool: TOOL, action: 'add', title: 'Keep me' })
