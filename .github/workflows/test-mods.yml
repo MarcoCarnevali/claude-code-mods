@@ -1,0 +1,37 @@
+# Validates and tests every mod in the repository (each folder with a .claude-plugin/plugin.json)
+# with the Claude Code CLI, on every push and pull request. No login is needed: plugin tests run
+# the engine locally. Read-only, no secrets, actions pinned to exact commits.
+name: Test mods
+
+on: [pull_request, push]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # Function-hook plugins are in early access: this turns on `claude plugin test` for them.
+      CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        # The stable release the mods were written against; raise it when they are checked on a newer one.
+        run: npm install --global @anthropic-ai/claude-code@2.1.285
+      - name: Validate and test each mod
+        run: |
+          status=0
+          for manifest in */.claude-plugin/plugin.json; do
+            mod="${manifest%%/*}"
+            echo "::group::$mod"
+            claude plugin validate "$mod" || status=1
+            claude plugin test "$mod" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
