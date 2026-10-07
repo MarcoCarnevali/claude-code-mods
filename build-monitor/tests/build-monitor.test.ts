@@ -17,7 +17,9 @@ import {
   progressText,
   remaining,
   segments,
+  touchProject,
   upgrade,
+  whenLabel,
   words,
   workdirOf,
 } from '../hooks/lib'
@@ -418,6 +420,7 @@ describe('pane', () => {
 
   test('Ask Claude to fix hands Claude the build, its errors and tests; Re-run and Copy', async ($, on) => {
     const state = fake(on)
+    on('turn.complete', () => ({ text: '' }))
     const submitted: string[] = []
     let finish = () => {}
     const turn = new Promise<void>(resolve => {
@@ -455,6 +458,10 @@ describe('pane', () => {
 
     await ui.press({ key: 'fix' })
     expect(submitted).toHaveLength(1)
+
+    // Claude's turn on the fix ends: the button is free again.
+    await $.turn.complete({ answer: 'Fixed.', durationMs: 1_000, isAborted: false, turnId: 'turn-1', reason: 'answer' })
+    expect((await ui.find({ key: 'fix' }))?.text).toBe('Ask Claude to fix')
 
     await ui.press({ key: 'rerun' })
     expect(submitted[1]).toBe('Run this build again, exactly as before:\n```\ncd ios && xcodebuild -scheme Orbit test\n```')
@@ -647,6 +654,95 @@ describe('pane', () => {
     fake(on)
     const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
     expect(await ui.find({ type: 'Text', text: 'No builds yet' })).toBeDefined()
+  })
+})
+
+describe('history', () => {
+  /** A finished build of an earlier session, as the store keeps it. */
+  const stored = (startedAt: number, took: number): BuildRun => ({
+    id: `toolu_${startedAt}`, platform: 'ios', tool: 'xcodebuild', title: 'Orbit · build', detail: '',
+    command: 'xcodebuild -scheme Orbit build', fullCommand: 'xcodebuild -scheme Orbit build', startedAt, endedAt: startedAt + took,
+    status: 'succeeded', errors: [], errorCount: 0, warnings: [], warningCount: 0, tests: null, failedTests: [], testIssues: [],
+    log: [], logFile: null,
+  })
+
+  /** The mod's store, as plain data a test reads back. */
+  function fakeStore(on: On, entries: Record<string, unknown> = {}): Record<string, unknown> {
+    const data: Record<string, unknown> = { ...entries }
+    on('store.get', ($, e) => ({ value: data[e.key] }))
+    on('store.set', ($, e) => {
+      data[e.key] = JSON.parse(JSON.stringify(e.value)) as unknown
+      return { value: undefined }
+    })
+    on('store.delete', ($, e) => {
+      delete data[e.key]
+      return { value: undefined }
+    })
+
+    return data
+  }
+
+  async function startSession($: Engine, on: On) {
+    on('command.register', () => ({ value: { command: 'builds' } }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  }
+
+  test("a finished build is kept for the project, without its log, and the project goes first in the list", async ($, on) => {
+    const state = fake(on)
+    const store = fakeStore(on, { projects: ['history:/elsewhere'] })
+    state.bash.stdout = GRADLE_SUCCEEDED
+    await bash($, './gradlew assembleDebug')
+
+    const kept = store['history:/work'] as BuildRun[]
+    expect(kept.map(run => [run.title, run.status])).toEqual([['assembleDebug', 'succeeded']])
+    expect(kept[0]?.log).toEqual([])
+    expect(store.projects).toEqual(['history:/work', 'history:/elsewhere'])
+  })
+
+  test("a new session starts with the project's earlier builds: the list, the day they ran, and the timer", async ($, on) => {
+    const state = fake(on)
+    const yesterday = NOW - 26 * 60 * 60_000
+    fakeStore(on, { 'history:/work': [stored(yesterday, 60_000), { junk: true }] })
+    await startSession($, on)
+
+    let ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: 'Succeeded' })).toBeDefined()
+    await ui.unmount()
+
+    // The same build today: the ring times it against yesterday's run.
+    const release = hold(state)
+    const call = bash($, 'xcodebuild -scheme Orbit build')
+    await state.clock.settle()
+    await state.clock.advance(20_000)
+    ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect((await ui.find({ type: 'Svg' }))?.props.alt).toBe('Building Orbit · build: 0:20 of about 1:00')
+    expect(JSON.stringify(await ui.drawn())).toContain(` · ${whenLabel(yesterday, NOW)}`)
+    release()
+    await call
+  })
+
+  test('Clear empties the kept history too, but for the latest build', async ($, on) => {
+    const state = fake(on)
+    const store = fakeStore(on)
+    state.bash.stdout = GRADLE_SUCCEEDED
+    await bash($, './gradlew assembleDebug')
+    await bash($, './gradlew assembleRelease')
+    expect((store['history:/work'] as BuildRun[]).length).toBe(2)
+
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'clear' })
+    expect((store['history:/work'] as BuildRun[]).map(run => run.title)).toEqual(['assembleRelease'])
+  })
+
+  test('the project list keeps the latest ten; when an earlier day shows its date', () => {
+    const many = Array.from({ length: 10 }, (_, index) => `history:/p${index}`)
+    expect(touchProject(many, 'history:/new')).toEqual({ projects: ['history:/new', ...many.slice(0, 9)], dropped: ['history:/p9'] })
+    expect(touchProject(['history:/a', 'history:/b'], 'history:/b').projects).toEqual(['history:/b', 'history:/a'])
+    expect(touchProject('garbage', 'history:/a')).toEqual({ projects: ['history:/a'], dropped: [] })
+    const noon = new Date(2026, 9, 6, 12, 0).getTime()
+    expect(whenLabel(noon - 2 * 60 * 60_000, noon)).toBe('10:00')
+    expect(whenLabel(noon - 24 * 60 * 60_000, noon)).toBe('5 Oct 12:00')
   })
 })
 

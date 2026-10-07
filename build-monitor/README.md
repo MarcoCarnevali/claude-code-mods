@@ -13,7 +13,7 @@ A status pane that opens by itself when Claude runs an Xcode or Gradle build.
 - **Under any finished build:** links to its warnings, its log and its command, one open at a time, and on a failed build **Copy errors**.
 - **Open in Xcode / Android Studio:** each error and warning opens its file at its line, through `xed` for Apple builds and Android Studio's `studio` launcher for Android ones (without the launcher, Android Studio opens the file at its start).
 - **Log and Command:** the whole command line, the build's flags one to a line; and the build's log, made readable: each step a short line (a run of compiles folded into one: "Compiling Trip.swift, Map.swift and 12 more"), errors and warnings with the code they point at, tests passed and failed, and the result. The compiler's own command lines, thousands of characters each, are left out. **Open full log** opens the whole output in your text editor, when it was long enough for Claude Code to keep it in a file.
-- **Earlier:** the session's previous builds with their result, duration and start time. Tap one to see it in the card, **Latest** to go back, **Clear** to empty the list.
+- **Earlier:** the project's last ten builds, across sessions, with their result, duration and when they ran (an earlier day's show its date). Tap one to see it in the card, **Latest** to go back, **Clear** to empty the list. Because the history is kept, the timer and the test badges know yesterday's builds from the first build of the day. The history is kept per repository, for the ten repositories built in most recently, without the builds' logs.
 - **Filter:** with builds for more than one platform, **All · iOS · macOS · Android** narrows the card and the list to one.
 
 `/builds` opens the pane at any time.

@@ -1036,6 +1036,51 @@ export function clockTime(at: number): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+/** "14:02" for a time today, else "6 Oct 14:02": earlier sessions' builds show their day. */
+export function whenLabel(at: number, now: number): string {
+  const date = new Date(at)
+  const today = new Date(now)
+  if (date.toDateString() === today.toDateString()) return clockTime(at)
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.getMonth()] ?? ''
+
+  return `${date.getDate()} ${month} ${clockTime(at)}`
+}
+
+/** How many projects' build histories are kept across sessions: the least recently built go first. */
+export const PROJECTS_KEPT = 10
+
+/** A build as the history keeps it across sessions: everything but its log, the bulk of it. */
+export function forHistory(run: BuildRun): BuildRun {
+  return { ...run, log: [] }
+}
+
+/** Whether `value`, read back from the store, has the shape of a recorded build. */
+export function isStoredRun(value: unknown): value is BuildRun {
+  if (typeof value !== 'object' || value === null) return false
+  const run = value as Partial<BuildRun>
+
+  return (
+    typeof run.id === 'string' &&
+    typeof run.title === 'string' &&
+    typeof run.command === 'string' &&
+    typeof run.startedAt === 'number' &&
+    (run.platform === 'ios' || run.platform === 'macos' || run.platform === 'android') &&
+    (run.tool === 'xcodebuild' || run.tool === 'gradle') &&
+    Array.isArray(run.errors)
+  )
+}
+
+/**
+ * The projects with a stored history, most recently built first, after a
+ * build in `key`'s project; and the keys that fall past `PROJECTS_KEPT`.
+ */
+export function touchProject(stored: unknown, key: string): { projects: string[]; dropped: string[] } {
+  const known = Array.isArray(stored) ? stored.filter((one): one is string => typeof one === 'string' && one !== key) : []
+  const projects = [key, ...known]
+
+  return { projects: projects.slice(0, PROJECTS_KEPT), dropped: projects.slice(PROJECTS_KEPT) }
+}
+
 /** `path:line` as a person scans it: the file's name and the line. */
 export function where(issue: BuildIssue): string {
   if (issue.file === null) return ''

@@ -13,7 +13,9 @@ import {
   detectBuild,
   duration,
   fixPrompt,
+  forHistory,
   formatCommand,
+  isStoredRun,
   issueOfTest,
   joinPath,
   logChunks,
@@ -30,7 +32,9 @@ import {
   spinnerFrame,
   summary,
   testBadge,
+  touchProject,
   upgrade,
+  whenLabel,
   where,
   workdirOf,
 } from './lib'
@@ -128,6 +132,44 @@ async function start($: EngineInterface, id: string, found: BuildCommand, line: 
   await $.ui.open({ id: PANE, title: TITLE })
 }
 
+/** The store key of this project's build history: the repository's root, else the session's folder. */
+async function historyKey($: EngineInterface): Promise<string> {
+  const repo = await $.session.repo().catch(() => null)
+  const root = repo?.root ?? (await $.session.cwd().catch(() => ''))
+
+  return `history:${root}`
+}
+
+/**
+ * Keeps the project's finished builds across sessions (the last `HISTORY`,
+ * without their logs), so the timer and the test badges know them tomorrow.
+ * A store that cannot be written keeps nothing; the pane works the same.
+ */
+async function saveHistory($: EngineInterface): Promise<void> {
+  try {
+    const key = await historyKey($)
+    const finished = (await read($, builds)).filter(run => run.status !== 'running' && run.status !== 'background')
+    await $.store.set(key, finished.slice(0, HISTORY).map(forHistory))
+    const touched = touchProject(await $.store.get('projects'), key)
+    await $.store.set('projects', touched.projects)
+    for (const dropped of touched.dropped) await $.store.delete(dropped)
+  } catch {
+    // no store here: the history lasts the session
+  }
+}
+
+/** A new session starts with the project's builds from earlier ones. */
+async function loadHistory($: EngineInterface): Promise<void> {
+  if ((await read($, builds)).length > 0) return
+  try {
+    const stored = await $.store.get(await historyKey($))
+    const runs = Array.isArray(stored) ? stored.filter(isStoredRun).map(upgrade).slice(0, HISTORY) : []
+    if (runs.length > 0) await update($, builds, () => runs)
+  } catch {
+    // no store here: nothing to load
+  }
+}
+
 /** Records how a build ended; answers the run as recorded. */
 async function finish($: EngineInterface, id: string, change: Partial<BuildRun>): Promise<BuildRun | undefined> {
   const endedAt = change.status === 'background' ? null : await $.clock.now()
@@ -135,6 +177,7 @@ async function finish($: EngineInterface, id: string, change: Partial<BuildRun>)
     current.map(run => (run.id === id ? { ...run, ...change, endedAt } : run)),
   )
   await syncTicker($)
+  await saveHistory($)
 
   return list.find(run => run.id === id)
 }
@@ -171,6 +214,7 @@ async function clear($: EngineInterface): Promise<void> {
   if (selected !== null && !kept.has(selected)) await update($, shown, () => null)
   const tab = await read($, opened)
   if (tab !== null && !kept.has(tab.id)) await update($, opened, () => null)
+  await saveHistory($)
 }
 
 /** Shows `id` in the card; the latest build when `id` is null. */
@@ -302,7 +346,7 @@ async function copyProblems($: EngineInterface, run: BuildRun, surface: RenderSu
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'builds', description: 'Show the Xcode and Gradle builds Claude ran this session' })
+    await $.command.register({ name: 'builds', description: "Show the Xcode and Gradle builds Claude ran in this project" })
     const started = await next(e)
     // A reload drops the hook that was waiting on a build: its result never arrives here.
     // Builds an older version recorded lack the fields added since: fill them in.
@@ -315,6 +359,7 @@ export const register: Register = on => {
         }),
       )
     }
+    await loadHistory($)
 
     return started
   })
@@ -591,7 +636,7 @@ export const register: Register = on => {
         )}
         {!isLatest && (
           <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-            <Text dimColor>{`Earlier build · ${clockTime(run.startedAt)}`}</Text>
+            <Text dimColor>{`Earlier build · ${whenLabel(run.startedAt, now)}`}</Text>
             <Button key="latest" label="Latest" plain onPress={() => void show($, null)} />
           </Box>
         )}
@@ -731,7 +776,7 @@ export const register: Register = on => {
                   {icon(one)}
                   <Button key={`show:${one.id}`} label={one.title} plain onPress={() => void show($, one.id === latest.id ? null : one.id)} />
                 </Box>
-                <Text dimColor>{`${one.status === 'background' ? 'background' : took(one)} · ${clockTime(one.startedAt)}`}</Text>
+                <Text dimColor>{`${one.status === 'background' ? 'background' : took(one)} · ${whenLabel(one.startedAt, now)}`}</Text>
               </Box>
             ))}
             {others.length > EARLIER_SHOWN && <Text dimColor>{`${others.length - EARLIER_SHOWN} more`}</Text>}
