@@ -64,6 +64,8 @@ claude plugin validate ./<mod>
 claude plugin test ./<mod>
 ```
 
+Function-hook plugins are in early access: if `claude plugin test` says so, set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. CI ([`test-mods.yml`](./.github/workflows/test-mods.yml)) validates and tests every mod on each push and pull request, and [`plugin-scan.yml`](./.github/workflows/plugin-scan.yml) runs the HOL plugin scanner.
+
 Run Claude Code with a mod loaded from this folder. It reloads whenever you save:
 
 ```bash
@@ -77,7 +79,8 @@ Claude Code writes the API's type declarations into `<mod>/.claude-plugin/types/
 1. Create its folder at the root, laid out as above.
 2. Add an entry to [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json): its `name`, `source` (`./<mod>`), `description` and `version`.
 3. Add it to the [Mods](#mods) table and give it a section of its own, with a screenshot and its install line.
-4. Check the marketplace still validates: `claude plugin validate .`
+4. Write tests for it in `<mod>/tests/`: CI runs them with the others.
+5. Check the marketplace still validates: `claude plugin validate .`
 
 ## License
 
