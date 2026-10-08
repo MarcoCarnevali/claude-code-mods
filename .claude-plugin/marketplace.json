@@ -10,6 +10,14 @@
   },
   "plugins": [
     {
+      "name": "build-monitor",
+      "source": "./build-monitor",
+      "description": "A pane that opens by itself when Claude runs a build (Xcode, Gradle, SwiftPM, fastlane, Flutter, React Native): a timer, failed tests and errors, Ask Claude to fix, and the build's trend",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": ["mod", "xcode", "xcodebuild", "gradle", "android", "ios", "swiftpm", "fastlane", "flutter", "react-native", "build", "pane"]
+    },
+    {
       "name": "github-issues",
       "source": "./github-issues",
       "description": "A side pane listing the repository's GitHub issues, with one click to have Claude work on one",

@@ -1,0 +1,10 @@
+{
+  "name": "build-monitor",
+  "version": "0.1.0",
+  "description": "A pane that opens by itself when Claude runs a build (Xcode, Gradle, SwiftPM, fastlane, Flutter, React Native): a timer, failed tests and errors, Ask Claude to fix, and the build's trend",
+  "author": { "name": "Marco Carnevali", "url": "https://github.com/MarcoCarnevali" },
+  "repository": "https://github.com/MarcoCarnevali/claude-code-mods",
+  "license": "MIT",
+  "keywords": ["mod", "xcode", "xcodebuild", "gradle", "android", "ios", "build", "pane"],
+  "types": "./types/index.d.ts"
+}
