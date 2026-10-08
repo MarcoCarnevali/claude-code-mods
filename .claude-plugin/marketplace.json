@@ -16,6 +16,14 @@
       "version": "0.1.0",
       "category": "productivity",
       "keywords": ["mod", "github", "issues", "pane"]
+    },
+    {
+      "name": "task-board",
+      "source": "./task-board",
+      "description": "A To do / Doing / Done board in a side pane, filled by Claude's to-do list, approved plans and a board tool, plus your own cards",
+      "version": "0.1.0",
+      "category": "productivity",
+      "keywords": ["mod", "board", "kanban", "todo", "plan", "pane"]
     }
   ]
 }

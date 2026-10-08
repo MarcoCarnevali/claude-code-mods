@@ -1,0 +1,10 @@
+{
+  "name": "task-board",
+  "version": "0.1.0",
+  "description": "A To do / Doing / Done board in a side pane, filled by Claude's to-do list, approved plans and a board tool, plus your own cards",
+  "author": { "name": "Marco Carnevali", "url": "https://github.com/MarcoCarnevali" },
+  "repository": "https://github.com/MarcoCarnevali/claude-code-mods",
+  "license": "MIT",
+  "keywords": ["mod", "board", "kanban", "todo", "plan", "pane"],
+  "types": "./types/index.d.ts"
+}
